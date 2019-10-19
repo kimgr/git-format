@@ -1,0 +1,269 @@
+#!/usr/bin/env python
+
+"""
+This script integrates clang-format with Git.
+
+It has two major modes, one diagnostic:
+
+  # Print the formatted diff against HEAD^
+  git diff -U0 HEAD^ | git-format
+
+and one for formatting changes in the working tree, the index or HEAD:
+
+  # Reformat the working tree in place
+  git-format --dirty
+
+  # Reformat the index into the working tree
+  git-format --staged
+
+  # Reformat HEAD in place
+  git-format --amend
+
+  # Reformat HEAD and add diff as a fixup commit
+  git-format --fixup
+
+"""
+
+from __future__ import print_function
+import argparse
+import re
+import os
+import sys
+import subprocess
+import difflib
+
+
+class UnstagedError(Exception):
+    pass
+
+
+RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
+RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
+
+
+SUPPORTED_EXTS = {
+    'cpp', 'cc', 'c++', 'cxx', 'hpp',
+    'c', 'h', 'inc',
+    'cl',
+    'm', 'mm',
+    'js',
+    'ts',
+    'proto',
+}
+
+
+def is_supported_filetype(filename):
+    _, ext = os.path.splitext(filename)
+    if ext:
+        ext = ext[1:]
+        ext = ext.lower()
+
+    return ext in SUPPORTED_EXTS
+
+
+def as_str(x):
+    if isinstance(x, str):
+        return x
+
+    # Python3
+    return x.decode('utf-8')
+
+
+def git(*args):
+    cmd = ['git'] + list(args)
+    output = subprocess.check_output(cmd)
+    output = as_str(output)
+    output = output.strip()
+    return output
+
+
+def git_format_config():
+    format_config = {
+        'format.binary': ('--path', lambda v: v),
+    }
+
+    config = {}
+
+    entries = git('config', '-l', '--name-only')
+    entries = entries.splitlines()
+    for name in entries:
+        if name not in format_config:
+            continue
+
+        gettype, transform = format_config[name]
+        value = git('config', '--get', gettype, name)
+        value = transform(value)
+        config[name] = value
+
+    return config
+
+
+def parse_diff(diff):
+    hunks = {}
+    for line in diff.splitlines():
+        m = RE_FILENAME.match(line)
+        if m:
+            filename = m.group(1).rstrip('\r\n')
+            continue
+
+        m = RE_HUNK.match(line)
+        if m:
+            start_line = int(m.group(1))
+            line_count = 1
+            if m.group(2):
+                line_count = int(m.group(2))
+            if line_count > 0:
+                end_line = start_line + line_count - 1
+                hunks.setdefault(filename, []).append((start_line, end_line))
+    return hunks
+
+
+def run_clang_format(cmd, content, cwd=None):
+    p = subprocess.Popen(cmd,
+                         cwd=cwd,
+                         stdout=subprocess.PIPE,
+                         stderr=None,
+                         stdin=subprocess.PIPE,
+                         universal_newlines=True)
+    formatted, _ = p.communicate(content)
+    if p.returncode != 0:
+        sys.exit(p.returncode)
+
+    return formatted
+
+
+def clang_format(opts, rootdir, filename, hunks):
+    with open(os.path.join(rootdir, filename), 'r') as fd:
+        before = fd.read()
+
+    if not is_supported_filetype(filename):
+        return before, before
+
+    cmd = [opts.binary, '-style=file']
+    cmd += ['-assume-filename', filename]
+
+    for begin, end in hunks:
+        cmd += ['-lines', '%s:%s' % (begin, end)]
+
+    after = run_clang_format(cmd, before, cwd=None)
+
+    return before, after
+
+
+def clang_format_diff(opts, rootdir, diff):
+    fulldiff = []
+    hunks = parse_diff(diff)
+    for filename, lines in hunks.items():
+        before, after = clang_format(opts, rootdir, filename, lines)
+        diff = difflib.unified_diff(before.splitlines(True),
+                                    after.splitlines(True),
+                                    filename, filename,
+                                    '(before formatting)',
+                                    '(after formatting)')
+        fulldiff += diff
+    return ''.join(fulldiff).strip('\n')
+
+
+def clang_format_inplace(opts, rootdir, diff):
+    edits = 0
+    hunks = parse_diff(diff)
+    for filename, lines in hunks.items():
+        before, after = clang_format(opts, rootdir, filename, lines)
+        if before != after:
+            with open(os.path.join(rootdir, filename), 'w') as fd:
+                fd.write(after)
+            edits += 1
+    return edits > 0
+
+
+def check_unstaged_files(opts):
+    if opts.force:
+        return
+
+    unstaged = git('diff', '--diff-filter=M', '--name-only')
+    if unstaged:
+        raise UnstagedError('Cannot format: You have unstaged changes\n'
+                            'Please commit or stash them.')
+
+
+def clang_format_amend(opts, rootdir):
+    check_unstaged_files(opts)
+
+    diff = git('diff', '-U0', 'HEAD^')
+    if clang_format_inplace(opts, rootdir, diff):
+        git('commit', '-a', '--no-edit', '--amend')
+
+
+def clang_format_fixup(opts, rootdir):
+    check_unstaged_files(opts)
+
+    sha = git('rev-parse', '--short', 'HEAD')
+    diff = git('diff', '-U0', 'HEAD^')
+    if clang_format_inplace(opts, rootdir, diff):
+        git('commit', '-a', '--no-edit', '--fixup=%s' % sha)
+
+
+def clang_format_staged(opts, rootdir):
+    check_unstaged_files(opts)
+
+    diff = git('diff', '-U0', '--staged')
+    clang_format_inplace(opts, rootdir, diff)
+
+
+def clang_format_working_tree(opts, rootdir):
+    diff = git('diff', '-U0')
+    clang_format_inplace(opts, rootdir, diff)
+
+
+def main(opts):
+    try:
+        rootdir = git('rev-parse', '--show-toplevel')
+
+        if opts.amend:
+            clang_format_amend(opts, rootdir)
+        elif opts.fixup:
+            clang_format_fixup(opts, rootdir)
+        elif opts.staged:
+            clang_format_staged(opts, rootdir)
+        elif opts.dirty:
+            clang_format_working_tree(opts, rootdir)
+        else:
+            diff = sys.stdin.read()
+            diff = clang_format_diff(opts, rootdir, diff)
+            if diff:
+                print(diff)
+                return 1
+    except UnstagedError as error:
+        print(error, file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as error:
+        print(error.output, file=sys.stderr)
+        return error.returncode
+    return 0
+
+
+if __name__ == '__main__':
+    config = git_format_config()
+
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__)
+    p.add_argument('--binary',
+                   default=config.get('format.binary', 'clang-format'),
+                   help='location of binary to use for clang-format')
+
+    p.add_argument('-f', '--force', action='store_true', default=False,
+                   help='allow changes to unstaged files')
+
+    gitactions = p.add_mutually_exclusive_group()
+    gitactions.add_argument('--dirty', action='store_true', default=False,
+                            help='reformat working tree in place')
+    gitactions.add_argument('--staged', action='store_true', default=False,
+                            help='reformat index into working tree')
+    gitactions.add_argument('--amend', action='store_true', default=False,
+                            help='reformat HEAD in place')
+    gitactions.add_argument('--fixup', action='store_true', default=False,
+                            help='fixup HEAD')
+
+    opts = p.parse_args()
+    sys.exit(main(opts))

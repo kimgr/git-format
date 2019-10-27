@@ -31,6 +31,7 @@ import os
 import sys
 import subprocess
 import difflib
+import ConfigParser
 
 
 class UnstagedError(Exception):
@@ -39,8 +40,7 @@ class UnstagedError(Exception):
 
 RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
 RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
-
-
+CONFIG_FILENAME = 'git-format.config'
 SUPPORTED_EXTS = {
     'cpp', 'cc', 'c++', 'cxx', 'hpp',
     'c', 'h', 'inc',
@@ -78,23 +78,31 @@ def git(*args):
 
 
 def git_format_config():
-    format_config = {
-        'format.binary': ('--path', lambda v: v),
-    }
+    def find_config_file():
+        # Search for config file up the directory tree
+        dirpath = os.getcwd()
+        while dirpath:
+            configpath = os.path.join(dirpath, CONFIG_FILENAME)
+            if os.path.isfile(configpath):
+                return configpath
 
-    config = {}
+            parent = os.path.dirname(dirpath)
+            dirpath = parent if parent != dirpath else None
 
-    entries = git('config', '-l', '--name-only')
-    entries = entries.splitlines()
-    for name in entries:
-        if name not in format_config:
-            continue
+        # Default to per-user config if nothing else is found (we might already
+        # know that this doesn't exist if cwd starts somewhere inside the home
+        # directory, but let's indulge in a double stat)
+        return os.path.expanduser('~/' + CONFIG_FILENAME)
 
-        gettype, transform = format_config[name]
-        value = git('config', '--get', gettype, name)
-        value = transform(value)
-        config[name] = value
+    # Set up default config
+    config = ConfigParser.ConfigParser({
+        'binary': 'clang-format'
+    })
+    config.add_section('format')
 
+    # Try to read from file (leaves config unmodified if file does not exist)
+    config_file = find_config_file()
+    config.read(config_file)
     return config
 
 
@@ -249,7 +257,7 @@ if __name__ == '__main__':
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=__doc__)
     p.add_argument('--binary',
-                   default=config.get('format.binary', 'clang-format'),
+                   default=config.get('format', 'binary'),
                    help='location of binary to use for clang-format')
 
     p.add_argument('-f', '--force', action='store_true', default=False,

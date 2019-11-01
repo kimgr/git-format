@@ -43,8 +43,9 @@ class Context(object):
         self.topdir = topdir
         self.opts = opts
 
-    def get_config(self):
-        """ Return config from file and/or command-line """
+    def get_config_for(self, filepath):
+        """ Return the most suitable config for filepath """
+        dirpath = os.path.dirname(filepath)
 
         # Set up default config
         config = ConfigParser.ConfigParser({
@@ -53,7 +54,7 @@ class Context(object):
         config.add_section('format')
 
         # Try to read from file (leaves config unmodified if file does not exist)
-        config_file = find_config_file(os.getcwd(), self.topdir)
+        config_file = find_config_file(dirpath, self.topdir)
         config.read(config_file)
 
         # Let command-line arguments override config file
@@ -167,7 +168,7 @@ def clang_format(ctx, filename, hunks):
     if not is_supported_filetype(filename):
         return before, before
 
-    config = ctx.get_config()
+    config = ctx.get_config_for(filepath)
 
     cmd = [config.get('format', 'binary'), '-style=file']
     cmd += ['-assume-filename', filename]

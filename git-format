@@ -38,6 +38,12 @@ class UnstagedError(Exception):
     pass
 
 
+class Context(object):
+    def __init__(self, topdir, opts):
+        self.topdir = topdir
+        self.opts = opts
+
+
 RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
 RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
 CONFIG_FILENAME = 'git-format.config'
@@ -140,29 +146,30 @@ def run_clang_format(cmd, content, cwd=None):
     return formatted
 
 
-def clang_format(opts, rootdir, filename, hunks):
-    with open(os.path.join(rootdir, filename), 'r') as fd:
+def clang_format(ctx, filename, hunks):
+    filepath = os.path.join(ctx.topdir, filename)
+    with open(filepath, 'r') as fd:
         before = fd.read()
 
     if not is_supported_filetype(filename):
         return before, before
 
-    cmd = [opts.binary, '-style=file']
+    cmd = [ctx.opts.binary, '-style=file']
     cmd += ['-assume-filename', filename]
 
     for begin, end in hunks:
         cmd += ['-lines', '%s:%s' % (begin, end)]
 
-    after = run_clang_format(cmd, before, cwd=None)
+    after = run_clang_format(cmd, before)
 
     return before, after
 
 
-def clang_format_diff(opts, rootdir, diff):
+def clang_format_diff(ctx, diff):
     fulldiff = []
     hunks = parse_diff(diff)
     for filename, lines in hunks.items():
-        before, after = clang_format(opts, rootdir, filename, lines)
+        before, after = clang_format(ctx, filename, lines)
         diff = difflib.unified_diff(before.splitlines(True),
                                     after.splitlines(True),
                                     filename, filename,
@@ -172,20 +179,20 @@ def clang_format_diff(opts, rootdir, diff):
     return ''.join(fulldiff).strip('\n')
 
 
-def clang_format_inplace(opts, rootdir, diff):
+def clang_format_inplace(ctx, diff):
     edits = 0
     hunks = parse_diff(diff)
     for filename, lines in hunks.items():
-        before, after = clang_format(opts, rootdir, filename, lines)
+        before, after = clang_format(ctx, filename, lines)
         if before != after:
-            with open(os.path.join(rootdir, filename), 'w') as fd:
+            with open(os.path.join(ctx.topdir, filename), 'w') as fd:
                 fd.write(after)
             edits += 1
     return edits > 0
 
 
-def check_unstaged_files(opts):
-    if opts.force:
+def check_unstaged_files(ctx):
+    if ctx.opts.force:
         return
 
     unstaged = git('diff', '--diff-filter=M', '--name-only')
@@ -194,50 +201,51 @@ def check_unstaged_files(opts):
                             'Please commit or stash them.')
 
 
-def clang_format_amend(opts, rootdir):
-    check_unstaged_files(opts)
+def clang_format_amend(ctx):
+    check_unstaged_files(ctx)
 
     diff = git('diff', '-U0', 'HEAD^')
-    if clang_format_inplace(opts, rootdir, diff):
+    if clang_format_inplace(ctx, diff):
         git('commit', '-a', '--no-edit', '--amend')
 
 
-def clang_format_fixup(opts, rootdir):
-    check_unstaged_files(opts)
+def clang_format_fixup(ctx):
+    check_unstaged_files(ctx)
 
     sha = git('rev-parse', '--short', 'HEAD')
     diff = git('diff', '-U0', 'HEAD^')
-    if clang_format_inplace(opts, rootdir, diff):
+    if clang_format_inplace(ctx, diff):
         git('commit', '-a', '--no-edit', '--fixup=%s' % sha)
 
 
-def clang_format_staged(opts, rootdir):
-    check_unstaged_files(opts)
+def clang_format_staged(ctx):
+    check_unstaged_files(ctx)
 
     diff = git('diff', '-U0', '--staged')
-    clang_format_inplace(opts, rootdir, diff)
+    clang_format_inplace(ctx, diff)
 
 
-def clang_format_working_tree(opts, rootdir):
+def clang_format_working_tree(ctx):
     diff = git('diff', '-U0')
-    clang_format_inplace(opts, rootdir, diff)
+    clang_format_inplace(ctx, diff)
 
 
 def main(opts):
     try:
-        rootdir = git('rev-parse', '--show-toplevel')
+        topdir = git('rev-parse', '--show-toplevel')
+        ctx = Context(topdir, opts)
 
         if opts.amend:
-            clang_format_amend(opts, rootdir)
+            clang_format_amend(ctx)
         elif opts.fixup:
-            clang_format_fixup(opts, rootdir)
+            clang_format_fixup(ctx)
         elif opts.staged:
-            clang_format_staged(opts, rootdir)
+            clang_format_staged(ctx)
         elif opts.dirty:
-            clang_format_working_tree(opts, rootdir)
+            clang_format_working_tree(ctx)
         else:
             diff = sys.stdin.read()
-            diff = clang_format_diff(opts, rootdir, diff)
+            diff = clang_format_diff(ctx, diff)
             if diff:
                 print(diff)
                 return 1

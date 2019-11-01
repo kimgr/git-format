@@ -43,6 +43,25 @@ class Context(object):
         self.topdir = topdir
         self.opts = opts
 
+    def get_config(self):
+        """ Return config from file and/or command-line """
+
+        # Set up default config
+        config = ConfigParser.ConfigParser({
+            'binary': 'clang-format'
+        })
+        config.add_section('format')
+
+        # Try to read from file (leaves config unmodified if file does not exist)
+        config_file = find_config_file(os.getcwd(), self.topdir)
+        config.read(config_file)
+
+        # Let command-line arguments override config file
+        if self.opts.binary is not None:
+            config.set('format', 'binary', self.opts.binary)
+
+        return config
+
 
 RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
 RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
@@ -56,6 +75,29 @@ SUPPORTED_EXTS = {
     'ts',
     'proto',
 }
+
+
+def find_config_file(bottom, top):
+    """ Search for config file up the directory tree from bottom to top,
+    inclusive """
+    dirpath = bottom
+    while True:
+        configpath = os.path.join(dirpath, CONFIG_FILENAME)
+        if os.path.isfile(configpath):
+            return configpath
+
+        if dirpath == top:
+            break
+
+        if dirpath == '/':
+            break
+
+        dirpath = os.path.dirname(dirpath)
+
+    # Default to per-user config if nothing else is found (we might already
+    # know that this doesn't exist if bottom starts somewhere inside the home
+    # directory, but let's indulge in a double stat)
+    return os.path.expanduser('~/' + CONFIG_FILENAME)
 
 
 def is_supported_filetype(filename):
@@ -81,35 +123,6 @@ def git(*args):
     output = as_str(output)
     output = output.strip()
     return output
-
-
-def git_format_config():
-    def find_config_file():
-        # Search for config file up the directory tree
-        dirpath = os.getcwd()
-        while dirpath:
-            configpath = os.path.join(dirpath, CONFIG_FILENAME)
-            if os.path.isfile(configpath):
-                return configpath
-
-            parent = os.path.dirname(dirpath)
-            dirpath = parent if parent != dirpath else None
-
-        # Default to per-user config if nothing else is found (we might already
-        # know that this doesn't exist if cwd starts somewhere inside the home
-        # directory, but let's indulge in a double stat)
-        return os.path.expanduser('~/' + CONFIG_FILENAME)
-
-    # Set up default config
-    config = ConfigParser.ConfigParser({
-        'binary': 'clang-format'
-    })
-    config.add_section('format')
-
-    # Try to read from file (leaves config unmodified if file does not exist)
-    config_file = find_config_file()
-    config.read(config_file)
-    return config
 
 
 def parse_diff(diff):
@@ -154,7 +167,9 @@ def clang_format(ctx, filename, hunks):
     if not is_supported_filetype(filename):
         return before, before
 
-    cmd = [ctx.opts.binary, '-style=file']
+    config = ctx.get_config()
+
+    cmd = [config.get('format', 'binary'), '-style=file']
     cmd += ['-assume-filename', filename]
 
     for begin, end in hunks:
@@ -259,13 +274,10 @@ def main(opts):
 
 
 if __name__ == '__main__':
-    config = git_format_config()
-
     p = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=__doc__)
-    p.add_argument('--binary',
-                   default=config.get('format', 'binary'),
+    p.add_argument('--binary', default=None,
                    help='location of binary to use for clang-format')
 
     p.add_argument('-f', '--force', action='store_true', default=False,

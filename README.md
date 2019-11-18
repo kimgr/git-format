@@ -108,11 +108,12 @@ binary in a simple `ini`-style `git-format.config` file:
 `git-format` uses a strategy similar to `clang-format` when searching for
 configuration:
 
-* Look for `git-format.config` in the current directory
-* If not found, search the directory tree upwards all the way to the root
+* For every file being formatted, search the directory tree upwards all the way
+  to the Git topdir looking for `git-format.config`
 * If not found, try `~/git-format.config`
 
-The default is to use `clang-format` on the system `PATH`.
+The default, if no config is found, is to use `clang-format` on the system
+`PATH`.
 
 
 ## Caveat ##

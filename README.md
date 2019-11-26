@@ -34,6 +34,10 @@ diff and return a non-zero exit code.
 You've made code changes using an editor that does not automatically format on
 save. Use:
 
+    $ git-format
+
+or
+
     $ git-format --dirty
 
 to reformat all modified files in place.
@@ -44,6 +48,10 @@ You've staged your changes and you're ready to commit. But oh!, you forgot to
 format! Use:
 
     $ git-format --staged
+
+or
+
+    $ git-format --cached
 
 to reformat the index and modify all affected files in your working tree. If
 you're happy with the changes, say `git add -u` to squash the changes into the
@@ -129,6 +137,7 @@ The exceptions are:
 * `git-format --fixup`, which generates distinct fixup commits, so you can
   review them before squashing them into the actual commits
 
-There's some amount of safety built into `git-format` -- it will only let you
-use the diff mode and the `--dirty` command if you have unstaged changes. All
-others require a clean working tree.
+Be particularly careful when launching `git-format` without arguments, it will
+reformat your working directory in place without asking.
+
+All other commands are non-destructive or warn if you have unstaged changes.

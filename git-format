@@ -11,7 +11,7 @@ It has two major modes, one diagnostic:
 and one for formatting changes in the working tree, the index or HEAD:
 
   # Reformat the working tree in place
-  git-format --dirty
+  git-format
 
   # Reformat the index into the working tree
   git-format --staged

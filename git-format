@@ -78,6 +78,19 @@ SUPPORTED_EXTS = {
 }
 
 
+def run(cmdargs, stdin=None, cwd=None):
+    p = subprocess.Popen(cmdargs,
+                         cwd=cwd,
+                         stdout=subprocess.PIPE,
+                         stderr=None,
+                         stdin=subprocess.PIPE if stdin else None,
+                         universal_newlines=True)
+    stdout, _ = p.communicate(stdin)
+    if p.returncode != 0:
+        raise subprocess.CalledProcessError(p.returncode, cmdargs, stdout)
+    return as_str(stdout)
+
+
 def find_config_file(bottom, top):
     """ Search for config file up the directory tree from bottom to top,
     inclusive """
@@ -120,8 +133,7 @@ def as_str(x):
 
 def git(*args):
     cmd = ['git'] + list(args)
-    output = subprocess.check_output(cmd)
-    output = as_str(output)
+    output = run(cmd)
     output = output.strip()
     return output
 
@@ -146,20 +158,6 @@ def parse_diff(diff):
     return hunks
 
 
-def run_clang_format(cmd, content, cwd=None):
-    p = subprocess.Popen(cmd,
-                         cwd=cwd,
-                         stdout=subprocess.PIPE,
-                         stderr=None,
-                         stdin=subprocess.PIPE,
-                         universal_newlines=True)
-    formatted, _ = p.communicate(content)
-    if p.returncode != 0:
-        sys.exit(p.returncode)
-
-    return formatted
-
-
 def clang_format(ctx, filename, hunks):
     filepath = os.path.join(ctx.topdir, filename)
     with open(filepath, 'r') as fd:
@@ -176,7 +174,7 @@ def clang_format(ctx, filename, hunks):
     for begin, end in hunks:
         cmd += ['-lines', '%s:%s' % (begin, end)]
 
-    after = run_clang_format(cmd, before)
+    after = run(cmd, stdin=before)
 
     return before, after
 

@@ -300,7 +300,8 @@ if __name__ == '__main__':
     gitactions = p.add_mutually_exclusive_group()
     gitactions.add_argument('--dirty', action='store_true', default=False,
                             help='reformat working tree in place (default)')
-    gitactions.add_argument('--staged', action='store_true', default=False,
+    gitactions.add_argument('--staged', '--cached',
+                            action='store_true', default=False,
                             help='reformat index into working tree')
     gitactions.add_argument('--amend', action='store_true', default=False,
                             help='reformat HEAD in place')

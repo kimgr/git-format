@@ -71,7 +71,7 @@ class Context(object):
 
 RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
 RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
-CONFIG_FILENAME = 'git-format.config'
+CONFIG_FILENAME = '.git-format'
 SUPPORTED_EXTS = {
     'cpp', 'cc', 'c++', 'cxx', 'hpp',
     'c', 'h', 'inc',

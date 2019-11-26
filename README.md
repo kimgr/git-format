@@ -100,7 +100,7 @@ to squash the fixup commits into the original commits.
 
 If different repos or directories in your repo use different `clang-format`
 versions, for whatever reason, you can configure the path of the `clang-format`
-binary in a simple `ini`-style `git-format.config` file:
+binary in a simple `ini`-style config file called `.git-format`:
 
     [format]
     binary=/usr/lib/llvm-4.0/bin/clang-format
@@ -109,8 +109,8 @@ binary in a simple `ini`-style `git-format.config` file:
 configuration:
 
 * For every file being formatted, search the directory tree upwards all the way
-  to the Git topdir looking for `git-format.config`
-* If not found, try `~/git-format.config`
+  to the Git topdir looking for `.git-format`
+* If not found, try `~/.git-format`
 
 The default, if no config is found, is to use `clang-format` on the system
 `PATH`.

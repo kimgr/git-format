@@ -29,12 +29,17 @@ import argparse
 import re
 import os
 import sys
+import errno
 import subprocess
 import difflib
 import ConfigParser
 
 
 class UnstagedError(Exception):
+    pass
+
+
+class RunError(Exception):
     pass
 
 
@@ -79,16 +84,23 @@ SUPPORTED_EXTS = {
 
 
 def run(cmdargs, stdin=None, cwd=None):
-    p = subprocess.Popen(cmdargs,
-                         cwd=cwd,
-                         stdout=subprocess.PIPE,
-                         stderr=None,
-                         stdin=subprocess.PIPE if stdin else None,
-                         universal_newlines=True)
-    stdout, _ = p.communicate(stdin)
-    if p.returncode != 0:
-        raise subprocess.CalledProcessError(p.returncode, cmdargs, stdout)
-    return as_str(stdout)
+    try:
+        p = subprocess.Popen(cmdargs,
+                             cwd=cwd,
+                             stdout=subprocess.PIPE,
+                             stderr=None,
+                             stdin=subprocess.PIPE if stdin else None,
+                             universal_newlines=True)
+        stdout, _ = p.communicate(stdin)
+        if p.returncode != 0:
+            raise subprocess.CalledProcessError(p.returncode, cmdargs, stdout)
+        return as_str(stdout)
+    except OSError as error:
+        if error.errno == errno.ENOENT:
+            raise RunError("executable missing: %s" % cmdargs[0])
+        elif error.errno == errno.EACCES:
+            raise RunError("executable permission denied: %s" % cmdargs[0])
+        raise  # traceback for unexpected errors
 
 
 def find_config_file(bottom, top):
@@ -264,6 +276,9 @@ def main(opts):
                 print(diff)
                 return 1
     except UnstagedError as error:
+        print(error, file=sys.stderr)
+        return 1
+    except RunError as error:
         print(error, file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as error:

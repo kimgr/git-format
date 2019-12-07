@@ -66,7 +66,7 @@ class Context(object):
         })
         config.add_section('format')
 
-        # Try to read from file (leaves config unmodified if file does not exist)
+        # Try to read from file (leaves config intact if file does not exist)
         config_file = find_config_file(dirpath, self.topdir)
         config.read(config_file)
 

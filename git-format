@@ -43,6 +43,14 @@ class RunError(Exception):
     pass
 
 
+class ChildError(Exception):
+    def __init__(self, cmd, exitcode, stdout, stderr):
+        self.cmd = cmd
+        self.exitcode = exitcode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 class Context(object):
     def __init__(self, topdir, opts):
         self.topdir = topdir
@@ -88,12 +96,12 @@ def run(cmdargs, stdin=None, cwd=None):
         p = subprocess.Popen(cmdargs,
                              cwd=cwd,
                              stdout=subprocess.PIPE,
-                             stderr=None,
+                             stderr=subprocess.PIPE,
                              stdin=subprocess.PIPE if stdin else None,
                              universal_newlines=True)
-        stdout, _ = p.communicate(stdin)
+        stdout, stderr = p.communicate(stdin)
         if p.returncode != 0:
-            raise subprocess.CalledProcessError(p.returncode, cmdargs, stdout)
+            raise ChildError(cmdargs, p.returncode, stdout, stderr)
         return as_str(stdout)
     except OSError as error:
         if error.errno == errno.ENOENT:
@@ -281,9 +289,9 @@ def main(opts):
     except RunError as error:
         print(error, file=sys.stderr)
         return 1
-    except subprocess.CalledProcessError as error:
-        print(error.output, file=sys.stderr)
-        return error.returncode
+    except ChildError as error:
+        print(error.stderr, file=sys.stderr)
+        return error.exitcode
     return 0
 
 

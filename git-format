@@ -78,6 +78,7 @@ class Context(object):
 
 
 RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
+RE_INDEX = re.compile(r'index [A-Fa-f0-9]+\.\.([A-Fa-f0-9]+).*')
 RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
 CONFIG_FILENAME = '.git-format'
 SUPPORTED_EXTS = {
@@ -161,6 +162,11 @@ def git(*args):
 def parse_diff(diff):
     hunks = {}
     for line in diff.splitlines():
+        m = RE_INDEX.match(line)
+        if m:
+            blobsha = m.group(1)
+            continue
+
         m = RE_FILENAME.match(line)
         if m:
             filename = m.group(1).rstrip('\r\n')
@@ -174,14 +180,28 @@ def parse_diff(diff):
                 line_count = int(m.group(2))
             if line_count > 0:
                 end_line = start_line + line_count - 1
-                hunks.setdefault(filename, []).append((start_line, end_line))
+                filehunks = hunks.setdefault((filename, blobsha), [])
+                filehunks.append((start_line, end_line))
     return hunks
 
 
-def clang_format(ctx, filename, hunks):
-    filepath = os.path.join(ctx.topdir, filename)
+def cat_file(filepath, blobsha):
+    try:
+        # First try to cat from git's database.
+        return git('cat-file', 'blob', blobsha)
+    except ChildError as error:
+        if not error.stderr.startswith('fatal: Not a valid object name'):
+            raise
+
+    # If git doesn't know about the file, the source must be in our local
+    # working directory.
     with open(filepath, 'r') as fd:
-        before = fd.read()
+        return fd.read()
+
+
+def clang_format(ctx, filename, blobsha, hunks):
+    filepath = os.path.join(ctx.topdir, filename)
+    before = cat_file(filepath, blobsha)
 
     if not is_supported_filetype(filename):
         return before, before
@@ -202,8 +222,8 @@ def clang_format(ctx, filename, hunks):
 def clang_format_diff(ctx, diff):
     fulldiff = []
     hunks = parse_diff(diff)
-    for filename, lines in hunks.items():
-        before, after = clang_format(ctx, filename, lines)
+    for (filename, blobsha), lines in hunks.items():
+        before, after = clang_format(ctx, filename, blobsha, lines)
         diff = difflib.unified_diff(before.splitlines(True),
                                     after.splitlines(True),
                                     filename, filename,
@@ -216,8 +236,8 @@ def clang_format_diff(ctx, diff):
 def clang_format_inplace(ctx, diff):
     edits = 0
     hunks = parse_diff(diff)
-    for filename, lines in hunks.items():
-        before, after = clang_format(ctx, filename, lines)
+    for (filename, blobsha), lines in hunks.items():
+        before, after = clang_format(ctx, filename, blobsha, lines)
         if before != after:
             with open(os.path.join(ctx.topdir, filename), 'w') as fd:
                 fd.write(after)

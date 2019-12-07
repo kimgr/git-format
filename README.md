@@ -38,7 +38,7 @@ save. Use:
 
 or
 
-    $ git-format --dirty
+    $ git-format --unstaged
 
 to reformat all modified files in place.
 

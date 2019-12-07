@@ -295,7 +295,7 @@ def main(opts):
             clang_format_fixup(ctx)
         elif opts.staged:
             clang_format_staged(ctx)
-        elif opts.dirty or sys.stdin.isatty():
+        elif opts.unstaged or sys.stdin.isatty():
             clang_format_working_tree(ctx)
         else:
             diff = sys.stdin.read()
@@ -326,7 +326,7 @@ if __name__ == '__main__':
                    help='allow changes to unstaged files')
 
     gitactions = p.add_mutually_exclusive_group()
-    gitactions.add_argument('--dirty', action='store_true', default=False,
+    gitactions.add_argument('--unstaged', action='store_true', default=False,
                             help='reformat working tree in place (default)')
     gitactions.add_argument('--staged', '--cached',
                             action='store_true', default=False,

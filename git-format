@@ -154,9 +154,7 @@ def as_str(x):
 
 def git(*args):
     cmd = ['git'] + list(args)
-    output = run(cmd)
-    output = output.strip()
-    return output
+    return run(cmd)
 
 
 def parse_diff(diff):
@@ -249,7 +247,7 @@ def check_unstaged_files(ctx):
     if ctx.opts.force:
         return
 
-    unstaged = git('diff', '--diff-filter=M', '--name-only')
+    unstaged = git('diff', '--diff-filter=M', '--name-only').strip()
     if unstaged:
         raise UnstagedError('Cannot format: You have unstaged changes\n'
                             'Please commit or stash them.')
@@ -266,7 +264,7 @@ def clang_format_amend(ctx):
 def clang_format_fixup(ctx):
     check_unstaged_files(ctx)
 
-    sha = git('rev-parse', '--short', 'HEAD')
+    sha = git('rev-parse', '--short', 'HEAD').strip()
     diff = git('diff', '-U0', 'HEAD^')
     if clang_format_inplace(ctx, diff):
         git('commit', '-a', '--no-edit', '--fixup=%s' % sha)
@@ -286,7 +284,7 @@ def clang_format_working_tree(ctx):
 
 def main(opts):
     try:
-        topdir = git('rev-parse', '--show-toplevel')
+        topdir = git('rev-parse', '--show-toplevel').strip()
         ctx = Context(topdir, opts)
 
         if opts.amend:

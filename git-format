@@ -26,6 +26,7 @@ and one for formatting changes in the working tree, the index or HEAD:
 
 from __future__ import print_function
 import argparse
+import fnmatch
 import re
 import os
 import sys
@@ -62,7 +63,8 @@ class Context(object):
 
         # Set up default config
         config = ConfigParser.ConfigParser({
-            'binary': 'clang-format'
+            'binary': 'clang-format',
+            'ignore': '',
         })
         config.add_section('format')
 
@@ -73,6 +75,9 @@ class Context(object):
         # Let command-line arguments override config file
         if self.opts.binary is not None:
             config.set('format', 'binary', self.opts.binary)
+
+        if self.opts.ignore is not None:
+            config.set('format', 'ignore', self.opts.ignore)
 
         return config
 
@@ -197,6 +202,15 @@ def cat_file(filepath, blobsha):
         return fd.read()
 
 
+def is_ignored(filename, config):
+    ignores = config.get('format', 'ignore')
+    ignores = [i for i in ignores.split(':') if i]
+    for ignore in ignores:
+        if fnmatch.fnmatch(filename, ignore):
+            return True
+    return False
+
+
 def clang_format(ctx, filename, blobsha, hunks):
     filepath = os.path.join(ctx.topdir, filename)
     before = cat_file(filepath, blobsha)
@@ -205,6 +219,9 @@ def clang_format(ctx, filename, blobsha, hunks):
         return before, before
 
     config = ctx.get_config_for(filepath)
+
+    if is_ignored(filename, config):
+        return before, before
 
     cmd = [config.get('format', 'binary'), '-style=file']
     cmd += ['-assume-filename', filename]
@@ -319,6 +336,8 @@ if __name__ == '__main__':
         description=__doc__)
     p.add_argument('--binary', default=None,
                    help='location of binary to use for clang-format')
+    p.add_argument('--ignore', default=None,
+                   help='colon-separated path patterns to ignore')
 
     p.add_argument('-f', '--force', action='store_true', default=False,
                    help='allow changes to unstaged files')

@@ -33,7 +33,11 @@ import sys
 import errno
 import subprocess
 import difflib
-import ConfigParser
+
+try:
+    import ConfigParser
+except ModuleNotFoundError:
+    import configparser as ConfigParser
 
 
 class UnstagedError(Exception):

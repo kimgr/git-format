@@ -52,6 +52,14 @@ class ChildError(Exception):
         self.stderr = stderr
 
 
+class PathNotFoundError(Exception):
+    def __init__(self, path):
+        self.path = path
+
+    def __str__(self):
+        return 'Path not found: \'%s\'' % self.path
+
+
 class Context(object):
     def __init__(self, topdir, opts):
         self.topdir = topdir
@@ -83,6 +91,15 @@ class Context(object):
 
         return config
 
+    def open_file(self, relpath, mode):
+        """ Open file path relative to topdir """
+        path = os.path.join(self.topdir, relpath)
+        try:
+            return open(path, mode)
+        except IOError as error:
+            if error.errno == errno.ENOENT:
+                raise PathNotFoundError(path)
+            raise
 
 RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
 RE_INDEX = re.compile(r'index [A-Fa-f0-9]+\.\.([A-Fa-f0-9]+).*')
@@ -200,8 +217,7 @@ def cat_file(ctx, filename, blobsha):
 
     # If git doesn't know about the file, the source must be in our local
     # working directory.
-    filepath = os.path.join(ctx.topdir, filename)
-    with open(filepath, 'r') as fd:
+    with ctx.open_file(filename, 'r') as fd:
         return fd.read()
 
 
@@ -215,7 +231,7 @@ def is_ignored(filename, config):
 
 
 def clang_format(ctx, filename, blobsha, hunks):
-    before = cat_file(filename, blobsha)
+    before = cat_file(ctx, filename, blobsha)
     if not is_supported_filetype(filename):
         return before, before
 
@@ -254,7 +270,7 @@ def clang_format_inplace(ctx, diff):
     for (filename, blobsha), lines in hunks.items():
         before, after = clang_format(ctx, filename, blobsha, lines)
         if before != after:
-            with open(os.path.join(ctx.topdir, filename), 'w') as fd:
+            with ctx.open_file(filename, 'w') as fd:
                 fd.write(after)
             edits += 1
     return edits > 0
@@ -327,6 +343,9 @@ def main(opts):
     except ChildError as error:
         print(error.stderr, file=sys.stderr)
         return error.exitcode
+    except PathNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 1
     return 0
 
 

@@ -101,7 +101,13 @@ class Context(object):
                 raise PathNotFoundError(path)
             raise
 
-RE_FILENAME = re.compile(r'^\+\+\+\ [^/]+/(.*)')
+    def strip_path(self, diffpath):
+        parts = diffpath.split('/')
+        parts = parts[self.opts.strip:]
+        return '/'.join(parts)
+
+
+RE_FILENAME = re.compile(r'^\+\+\+\ (.*)')
 RE_INDEX = re.compile(r'index [A-Fa-f0-9]+\.\.([A-Fa-f0-9]+).*')
 RE_HUNK = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))?')
 CONFIG_FILENAME = '.git-format'
@@ -181,7 +187,7 @@ def git(*args):
     return run(cmd)
 
 
-def parse_diff(diff):
+def parse_diff(ctx, diff):
     hunks = {}
     for line in diff.splitlines():
         m = RE_INDEX.match(line)
@@ -192,6 +198,7 @@ def parse_diff(diff):
         m = RE_FILENAME.match(line)
         if m:
             filename = m.group(1).rstrip('\r\n')
+            filename = ctx.strip_path(filename)
             continue
 
         m = RE_HUNK.match(line)
@@ -252,7 +259,7 @@ def clang_format(ctx, filename, blobsha, hunks):
 
 def clang_format_diff(ctx, diff):
     fulldiff = []
-    hunks = parse_diff(diff)
+    hunks = parse_diff(ctx, diff)
     for (filename, blobsha), lines in hunks.items():
         before, after = clang_format(ctx, filename, blobsha, lines)
         diff = difflib.unified_diff(before.splitlines(True),
@@ -266,7 +273,7 @@ def clang_format_diff(ctx, diff):
 
 def clang_format_inplace(ctx, diff):
     edits = 0
-    hunks = parse_diff(diff)
+    hunks = parse_diff(ctx, diff)
     for (filename, blobsha), lines in hunks.items():
         before, after = clang_format(ctx, filename, blobsha, lines)
         if before != after:
@@ -345,6 +352,8 @@ def main(opts):
         return error.exitcode
     except PathNotFoundError as error:
         print(error, file=sys.stderr)
+        print('Hint: use -p to compensate for non-default diff path prefix',
+              file=sys.stderr)
         return 1
     return 0
 
@@ -360,6 +369,8 @@ if __name__ == '__main__':
 
     p.add_argument('-f', '--force', action='store_true', default=False,
                    help='allow changes to unstaged files')
+    p.add_argument('-p', '--strip', type=int, default=1,
+                   help='strip prefix')
 
     gitactions = p.add_mutually_exclusive_group()
     gitactions.add_argument('--unstaged', action='store_true', default=False,

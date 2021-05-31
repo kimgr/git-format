@@ -59,6 +59,8 @@ class Context(object):
 
     def get_config_for(self, filepath):
         """ Return the most suitable config for filepath """
+        if not os.path.isabs(filepath):
+            filepath = os.path.join(self.topdir, filepath)
         dirpath = os.path.dirname(filepath)
 
         # Set up default config
@@ -188,7 +190,7 @@ def parse_diff(diff):
     return hunks
 
 
-def cat_file(filepath, blobsha):
+def cat_file(ctx, filename, blobsha):
     try:
         # First try to cat from git's database.
         return git('cat-file', 'blob', blobsha)
@@ -198,6 +200,7 @@ def cat_file(filepath, blobsha):
 
     # If git doesn't know about the file, the source must be in our local
     # working directory.
+    filepath = os.path.join(ctx.topdir, filename)
     with open(filepath, 'r') as fd:
         return fd.read()
 
@@ -212,14 +215,11 @@ def is_ignored(filename, config):
 
 
 def clang_format(ctx, filename, blobsha, hunks):
-    filepath = os.path.join(ctx.topdir, filename)
-    before = cat_file(filepath, blobsha)
-
+    before = cat_file(filename, blobsha)
     if not is_supported_filetype(filename):
         return before, before
 
-    config = ctx.get_config_for(filepath)
-
+    config = ctx.get_config_for(filename)
     if is_ignored(filename, config):
         return before, before
 
